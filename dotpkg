@@ -1,0 +1,313 @@
+#!/usr/bin/env sh
+:<<='cut'
+
+=head1 NAME
+
+dotpkg - Package manager (a la 'Vundle') for dotfile packages
+
+=head1 SYNOPSIS
+
+    # in your .profile, .bashrc, or whatever
+    eval `$HOME/dotfiles/bash/dotpkg/dotpkg -s`
+
+    # Let dotpkg manage dotpkg
+    dotpkg 'aghast/dotpkg'
+
+    # Specify host service if not github
+    dotpkg 'gitorious/projectname/reponame'
+
+=head1 DESCRIPTION
+
+Dotpkg is a package manager for your dotfiles. It was inspired by, and works
+similar to, the I<Vundle> package for I<vim> editor. First, you load the
+C<dotpkg> package into your shell. After this, you can specify other packages
+to be managed by dotpkg.
+
+When invoked with the C<-s> option, dotpkg emits a set of Bourne-shell
+compatible statements that configure dotpkg for subsequent use. This is needed
+since not all shells provide the features needed to run by simply sourcing the
+script.
+
+When invoked with a package name, C<dotpkg> will download or refresh (using git
+pull, hg pull, or whatever) the package to ensure that updates are
+automatically obtained. It then looks inside the resulting directory for a file
+named autoload.*. Depending on the shell you are running, a variety of
+extensions is tried. (Bash: .bash, then .sh). If no autoload file is found,
+nothing is done - this is an error. If an autoload file is found, then a
+similar set of checks is performed for the logout.* script. If found, the
+logout script is added to a list of unload hooks to be run when the shell
+exits.
+
+It is possible that the logout hooks may not be run, if some other script
+overwrites the EXIT trap installed by dotpkg. For this reason, you should call
+dotpkg_logout from your logout script, if you have one (Bash: .bash_logout).
+
+=cut
+
+set -Eeu
+
+############################################################################
+###
+### Global Variables
+###
+############################################################################
+
+# Directory containing dotpkg files
+if [ "x${DOTPKG_DIR:-}" = "x" ]
+then
+	case "$0" in
+	/*)	# absolute
+		DOTPKG_DIR=`dirname "$0"`
+		;;
+	*)	# relative
+		DOTPKG_DIR=`pwd`/"$0"
+		DOTPKG_DIR=`dirname "$DOTPKG_DIR"`
+		;;
+	esac
+	DOTPKG_DIR=`cd "$DOTPKG_DIR"; pwd`
+fi
+
+# List of directories to search for packages
+DOTPKG_PATH="${DOTPKG_PATH:-`dirname "$DOTPKG_DIR"`}"
+
+# Store to last directory in path - guessing that sequence is system:user directories
+if expr "$DOTPKG_PATH" : ".*:" >/dev/null
+then
+	DOTPKG_STORE="${DOTPKG_STORE:-`expr "$DOTPKG_PATH" : ".*:\([^:]*\)"`}"
+else
+	DOTPKG_STORE="$DOTPKG_PATH"
+fi
+
+# Default suffix for this shell
+DOTPKG_SHELL_EXT="${DOTPKG_SHELL_EXT:-`basename "$SHELL"`}"
+
+# List of suffixes to check for files
+if [ "x${DOTPKG_SUFFIXES:-}" = "x" ]
+then
+	case "$DOTPKG_SHELL_EXT" in
+	bash ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.bash .ksh .sh}" ;;
+	ash ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.ash .sh}" ;;
+	ksh ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.ksh .sh}" ;;
+	zsh ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.zsh .ksh .sh}" ;;
+	# handle 'sh' and any leakers.
+	* ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.sh}" ;;
+	esac
+fi
+
+DOTPKG_DEFAULT_REPO="${DOTPKG_DEFAULT_REPO:-github}"
+
+############################################################################
+###
+### Subroutines
+###
+############################################################################
+
+load_pkg() {
+	autoload_sh=""
+	logout_sh=""
+	for ext in $DOTPKG_SUFFIXES
+	do
+		[ "x$autoload_sh" = "x" ] && [ -f "$PKG_DIR/autoload$ext" ] && autoload_sh="$PKG_DIR/autoload$ext"
+		[ "x$logout_sh" = "x" ] && [ -f "$PKG_DIR/logout$ext" ] && logout_sh="$PKG_DIR/logout$ext"
+	done
+
+	case "${DOTPKG_SYNTAX:-sh}" in
+	sh) source="." ;;
+	*) source=source ;;
+	esac
+
+	if [ "x$autoload_sh" = "x" ]
+	then
+		# Possibly only a logout script...
+		if [ "x$logout_sh" = "x" ]
+		then
+			echo "ERROR: Neither autoload nor logout script located in '$PKG_DIR' - nothing done." >&2
+			exit 1
+		fi
+	else
+		echo "$source '$autoload_sh' ;"
+	fi
+
+	if [ "x$logout_sh" != "x" ]
+	then
+		if [ "x$DOTPKG_LOGOUT" = "x" ]
+		then
+			echo "DOTPKG_LOGOUT='$logout_sh' ;"
+		else
+			echo "DOTPKG_LOGOUT='$DOTPKG_LOGOUT:$logout_sh' ;"
+		fi
+	fi
+}
+
+manage_package() {
+	set_pkgvars "$1"
+	refresh_package || return 1
+	load_pkg
+}
+
+parse_package() {
+	# PACKAGE looks like one of these:
+	# 1) a url: http://github.com/aghast/dotpkg
+	# 2) a host/user/repo triple: github/aghast/dotpkg
+	# 3) a user-or-project/repo pair: aghast/dotpkg
+	# 4) something else: *
+
+	PKG_NAME=`basename "$PACKAGE"`
+	if [ "x${PKG_NAME:-}" = "x" ]
+	then
+		echo "Invalid package: $PACKAGE" >&2
+		exit 1
+	fi
+
+	unset PKG_GROUP PKG_HOST PKG_URL PKG_VCS
+
+	case "$PACKAGE" in
+	*://*) # It's a url
+		PKG_URL="$PACKAGE"
+		PKG_GROUP=`dirname "$PACKAGE"`
+		PKG_GROUP=`basename "$PKG_GROUP"`
+		;;
+	*/*/*)	# It's a triple
+		PKG_GROUP=`dirname "$PACKAGE"`
+		PKG_HOST=`dirname "$PKG_GROUP"`
+		PKG_GROUP=`basename "$PKG_GROUP"`
+		;;
+	*/*)	# It's a pair
+		PKG_GROUP=`dirname "$PACKAGE"`
+		PKG_HOST=$DOTPKG_DEFAULT_REPO
+		;;
+	*)	# Single name?
+		PKG_HOST=$DOTPKG_DEFAULT_REPO
+		# Unexpected, but we can try it- maybe if pkg host is googlecode or something.
+	esac
+}
+
+refresh_package() {
+	if [ -d "$PKG_DIR" ]
+	then
+		oldCWD=`pwd`
+		cd "$PKG_DIR"
+
+		case "$PKG_VCS" in
+		git )	git pull >/dev/null;;
+		hg  )	hg  pull >/dev/null;;
+		esac
+
+		cd "$oldCWD"
+	else
+		case "$PKG_VCS" in
+		git )	git clone "$PKG_URL" "$PKG_DIR"	>/dev/null;;
+		hg )	hg  clone "$PKG_URL" "$PKG_DIR" >/dev/null;;
+		esac
+	fi
+}
+
+set_pkgdir() {
+	PKG_DIR="$DOTPKG_STORE/$PKG_NAME"
+	oldIFS="$IFS"
+	IFS=:
+	for dir in "$DOTPKG_PATH"
+	do
+		# Skip empty entries
+		[ "x$dir" = "x" ] && continue
+		# Check if package dir exists in this location
+		[ -d "$dir/$PKG_NAME" ] || continue
+		PKG_DIR="$dir/$PKG_NAME"
+		break
+	done
+	IFS="$oldIFS"
+	return 0
+}
+
+set_pkgurl() {
+	[ "x${PKG_URL:-}" = "x" ] || return 0
+
+	PKG_HOST=${PKG_HOST:-$DOTPKG_DEFAULT_REPO}
+
+	case "$PKG_HOST" in
+	*://* )
+		# TODO: How does this happen? Is there any benefit to this option?
+		PKG_URL="$PKG_HOST"
+		;;
+	* )
+		PKG_URL=`grep "^$PKG_HOST|" "$DOTPKG_DIR/repo-urls" \
+		| cut -d'|' -f2`
+		;;
+	esac
+
+	PKG_URL=`echo "$PKG_URL" \
+	| sed -e "s/{PROJECT}/$PKG_GROUP/g" -e "s/{GROUP}/$PKG_GROUP/g" \
+		-e "s/{USER}/$PKG_GROUP/g" -e "s/{REPO}/$PKG_NAME/g" `
+}
+
+set_pkgvars() {
+	PACKAGE="$1"
+	parse_package
+	set_pkgdir
+	set_pkgurl
+	set_pkgvcs
+}
+
+set_pkgvcs() {
+	[ "x${PKG_VCS:-}" = "x" ] || return 0
+
+	case "$PKG_URL" in
+	*//git*|*.git) PKG_VCS=git	;;
+	*) PKG_VCS=git ;;
+	esac
+}
+
+write_sh_hook() {
+	# Quoting heredoc so no vars expanded.
+	cat <<SH_HOOK
+DOTPKG_SYNTAX=sh; export DOTPKG_SYNTAX
+dotpkg() {
+	if [ \$# -eq 0 ]; then
+		echo "Usage: dotpkg 'package-spec'" >&2
+		return 2
+	fi
+
+	eval \`"$DOTPKG" "\$@"\`
+}
+
+dotpkg_logout() {
+	[ "x${DOTPKG_LOGGING_OUT:-}" = "x" ] || return 0
+	DOTPKG_LOGGING_OUT=true
+
+	oldIFS="$IFS"
+	IFS=:
+	for logout_sh in "${DOTPKG_LOGOUT:-}"
+	do
+		[ "x${logout_sh:-}" = "x" ] && continue
+		. "$logout_sh"
+	done
+	IFS="$oldIFS"
+	unset logout_sh
+	return 0
+}
+
+trap dotpkg_logout EXIT
+SH_HOOK
+}
+
+############################################################################
+###
+### Processing
+###
+############################################################################
+
+# Try to hook the exit handler, but if someone overwrites us, we're borked.
+# Please be sure you call dotpkg_logout from your .logout file, too.
+#_FIXME: This belongs in writE_sh_hook
+
+# Handle case of "eval `path/to/dotpkg -s`"
+case "${1:-}" in
+-s)	write_sh_hook ;;
+-h|"")	sed -ne "/^:<<='cut/,/^=cut/{/='cut/d;/^=cut/d;p;}" "$0" ;;
+*)
+	manage_package "$1"
+	exit 1
+	;;
+esac
+
+exit 0
