@@ -27,7 +27,7 @@
 
     # Let dotpkg manage dotpkg
     dotpkg 'aghast/dotpkg'
-    # {{{
+    # }}}
 
     # Dotfile packages {{{
     dotpkg 'bitbucket/foo/bar'
