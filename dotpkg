@@ -52,34 +52,24 @@ set -Eeu
 ###
 ############################################################################
 
-# Directory containing dotpkg files
-if [ "x${DOTPKG_DIR:-}" = "x" ]
-then
-	case "$0" in
-	/*)	# absolute
-		DOTPKG_DIR=`dirname "$0"`
-		;;
-	*)	# relative
-		DOTPKG_DIR=`pwd`/"$0"
-		DOTPKG_DIR=`dirname "$DOTPKG_DIR"`
-		;;
-	esac
-	DOTPKG_DIR=`cd "$DOTPKG_DIR"; pwd`
-fi
+# Path to this script
+DOTPKG=${DOTPKG:-`pwd`/$0}
+
+# Default repo provider
+DOTPKG_DEFAULT_REPO=${DOTPKG_DEFAULT_REPO:-github}
+
+# Path of directory holding this script (and url file)
+DOTPKG_DIR=${DOTPKG_DIR:-`dirname "$DOTPKG"`}
 
 # List of directories to search for packages
-DOTPKG_PATH="${DOTPKG_PATH:-`dirname "$DOTPKG_DIR"`}"
-
-# Store to last directory in path - guessing that sequence is system:user directories
-if expr "$DOTPKG_PATH" : ".*:" >/dev/null
-then
-	DOTPKG_STORE="${DOTPKG_STORE:-`expr "$DOTPKG_PATH" : ".*:\([^:]*\)"`}"
-else
-	DOTPKG_STORE="$DOTPKG_PATH"
-fi
+DOTPKG_PATH=${DOTPKG_PATH:-`dirname "$DOTPKG_DIR"`}
 
 # Default suffix for this shell
-DOTPKG_SHELL_EXT="${DOTPKG_SHELL_EXT:-`basename "$SHELL"`}"
+DOTPKG_SHELL_EXT=${DOTPKG_SHELL_EXT:-`basename "$SHELL"`}
+
+# Store to last directory in path - guessing that sequence is system:user directories
+DOTPKG_STORE=${DOTPKG_STORE:-`expr "$DOTPKG_PATH" : ".*:\([^:]*\)"`}
+DOTPKG_STORE=${DOTPKG_STORE:-$DOTPKG_PATH}
 
 # List of suffixes to check for files
 if [ "x${DOTPKG_SUFFIXES:-}" = "x" ]
@@ -93,8 +83,6 @@ then
 	* ) DOTPKG_SUFFIXES="${DOTPKG_SUFFIXES:-.sh}" ;;
 	esac
 fi
-
-DOTPKG_DEFAULT_REPO="${DOTPKG_DEFAULT_REPO:-github}"
 
 ############################################################################
 ###
@@ -258,12 +246,11 @@ set_pkgvcs() {
 }
 
 write_sh_hook() {
-	# Quoting heredoc so no vars expanded.
 	cat <<SH_HOOK
 DOTPKG_SYNTAX=sh; export DOTPKG_SYNTAX;
 dotpkg() {
 	[ \$# -eq 0 ] && { echo "Usage: dotpkg 'package-spec'" >&2; return 2; };
-	eval \`"$0" "\$@"\` ;
+	eval \`"$DOTPKG" "\$@"\` ;
 };
 dotpkg_logout() {
 	[ "x\${DOTPKG_LOGGING_OUT:-}" = "x" ] || return 0;
