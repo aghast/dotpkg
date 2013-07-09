@@ -53,7 +53,13 @@ set -Eeu
 ############################################################################
 
 # Path to this script
-DOTPKG=${DOTPKG:-`pwd`/$0}
+if [ -z "${DOTPKG:-}" ]
+then
+	case "$0" in
+	/*) DOTPKG="$0" ;;
+	*)  DOTPKG=`pwd`/"$0" ;;
+	esac
+fi
 
 # Default repo provider
 DOTPKG_DEFAULT_REPO=${DOTPKG_DEFAULT_REPO:-github}
@@ -68,7 +74,7 @@ DOTPKG_PATH=${DOTPKG_PATH:-`dirname "$DOTPKG_DIR"`}
 DOTPKG_SHELL_EXT=${DOTPKG_SHELL_EXT:-`basename "$SHELL"`}
 
 # Store to last directory in path - guessing that sequence is system:user directories
-DOTPKG_STORE=${DOTPKG_STORE:-`expr "$DOTPKG_PATH" : ".*:\([^:]*\)"`}
+DOTPKG_STORE=${DOTPKG_STORE:-`expr "$DOTPKG_PATH" : ".*:\([^:]*\)" || : `}
 DOTPKG_STORE=${DOTPKG_STORE:-$DOTPKG_PATH}
 
 # List of suffixes to check for files
