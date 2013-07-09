@@ -260,32 +260,25 @@ set_pkgvcs() {
 write_sh_hook() {
 	# Quoting heredoc so no vars expanded.
 	cat <<SH_HOOK
-DOTPKG_SYNTAX=sh; export DOTPKG_SYNTAX
+DOTPKG_SYNTAX=sh; export DOTPKG_SYNTAX;
 dotpkg() {
-	if [ \$# -eq 0 ]; then
-		echo "Usage: dotpkg 'package-spec'" >&2
-		return 2
-	fi
-
-	eval \`"$DOTPKG" "\$@"\`
-}
-
+	[ \$# -eq 0 ] && { echo "Usage: dotpkg 'package-spec'" >&2; return 2; };
+	eval \`"$0" "\$@"\` ;
+};
 dotpkg_logout() {
-	[ "x${DOTPKG_LOGGING_OUT:-}" = "x" ] || return 0
-	DOTPKG_LOGGING_OUT=true
-
-	oldIFS="$IFS"
-	IFS=:
-	for logout_sh in "${DOTPKG_LOGOUT:-}"
+	[ "x\${DOTPKG_LOGGING_OUT:-}" = "x" ] || return 0;
+	DOTPKG_LOGGING_OUT=true;
+	oldIFS="\$IFS";
+	IFS=":";
+	for logout_sh in "\${DOTPKG_LOGOUT:-}";
 	do
-		[ "x${logout_sh:-}" = "x" ] && continue
-		. "$logout_sh"
-	done
-	IFS="$oldIFS"
-	unset logout_sh
-	return 0
-}
-
+		[ "x\${logout_sh:-}" = "x" ] && continue;
+		. "\$logout_sh" ;
+	done;
+	IFS="\$oldIFS";
+	unset logout_sh;
+	return 0;
+};
 trap dotpkg_logout EXIT
 SH_HOOK
 }

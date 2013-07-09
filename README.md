@@ -49,19 +49,46 @@
 - forget worrying about installing scripts in `~/bin` using cp, install, symlinks
 - publish your clever dotfile ideas to others without a super-formal structure
 
+## Configuration
+
+[dotpkg] will work fine as shown above. But you may want to customize the behavior somewhat. Here are some things you can change:
+
+```sh
+# Directory containing the dotpkg files [default: $(dirname $(which dotpkg)) ]
+DOTPKG_DIR=...
+export DOTPKG_DIR
+
+# List of directories to search for dotpkgs. (default: $DOTPKG_DIR)
+DOTPKG_PATH=/usr/local/share/etc/dotpkg:$HOME/dotfiles/dotpkg
+export DOTPKG_DIR
+
+# Directory to write new dotpkgs. (default: last entry in $DOTPKG_PATH)
+DOTPKG_STORE=$HOME/dotfiles/dotpkg
+export DOTPKG_DIR
+
+# List of suffixes to use for this shell (default: based on $SHELL)
+DOTPKG_SUFFIXES=".bash .sh"
+export DOTPKG_SUFFIXES
+
+# Default repo host (default: github)
+DOTPKG_DEFAULT_REPO=gitorious
+export DOTPKG_DEFAULT_REPO
+
+```
+
 ## How it works
 
 Say you have a really clever dotfile trick for your shell. You want to share this with others, but don't know how.
 
 Make a directory - this will be your "project." Put the directory under control of your favorite VCS tool.
 
-    ```sh
-    ~$ mkdir coolidea
-    ~/coolidea$ cd coolidea
-    ~/coolidea$ git init
-    Initialized empty Git repository in ~/coolidea/.git/
-    (master) ~/coolidea$
-    ```
+```sh
+~$ mkdir coolidea
+~/coolidea$ cd coolidea
+~/coolidea$ git init
+Initialized empty Git repository in ~/coolidea/.git/
+(master) ~/coolidea$
+```
 
 Now, create a file called `autoload.sh` (or .bash, .csh, .ksh, .zsh) depending on the minimum shell required to use the script.
 If you need it, you can also create `logout.sh` (or .bash, .csh, etc.) to run when the user logs out.
